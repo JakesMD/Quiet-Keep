@@ -8,98 +8,78 @@
 
 QMic mic(MIC_PIN, SAMPLE_WINDOW);
 QFadeLED led(LED_PIN);
-QPot sensitivityPot(POT_SENSITIVITY_PIN, 0, 400);
-QPot durationPot(POT_DURATION_PIN, 300, 0);
+QPot sensitivityPot(POT_SENSITIVITY_PIN, 400, 0);
 QBuzzer buzzer(BUZZER_PIN, BUZZER_FREQUENCY, FAST_FADE_DURATION);
 
-uint16_t volume;
-uint16_t accumulation;
+uint16_t volume = 0;
+uint16_t accumulation = 0;
 uint16_t accumulationTriggerVolume;
-uint16_t accumulationLimit;
 unsigned long currentMillis;
+unsigned long startMillis;
 
-enum ACCUMULATION_LEVEL {
-    LOW_LEVEL,
-    MEDIUM_LEVEL,
-    HIGH_LEVEL,
-};
+uint16_t calculateAccumulation(uint16_t volume, uint16_t currentAccumulation, uint16_t accumulationTriggerVolume) {
+    uint16_t newAccumulation = 0;
 
-uint16_t calculateAccumulation(uint16_t volume, uint16_t currentAccumulation, uint16_t accumulationTriggerVolume,
-                               uint16_t accumulationLimit) {
-    uint16_t newAccumulation;
-
-    if (volume >= accumulationTriggerVolume && currentAccumulation < accumulationLimit) {
+    if (volume >= accumulationTriggerVolume && currentAccumulation < ACCUMULATION_LIMIT) {
         newAccumulation = currentAccumulation + ATTACK;
     } else if (volume < accumulationTriggerVolume && currentAccumulation > 0) {
         newAccumulation = currentAccumulation - RELEASE;
     }
 
-    if (newAccumulation > accumulationLimit) newAccumulation = accumulationLimit;
+    if (newAccumulation > ACCUMULATION_LIMIT) newAccumulation = ACCUMULATION_LIMIT;
 
     return newAccumulation;
 }
 
-ACCUMULATION_LEVEL calculateAccumulationLevel(uint16_t accumulation, uint16_t accumulationLimit) {
-    if (accumulation > accumulationLimit / 2) {
-        return HIGH_LEVEL;
-    } else if (accumulation > accumulationLimit / 4) {
-        return MEDIUM_LEVEL;
-    } else {
-        return LOW_LEVEL;
-    }
-}
-
-void plotData(uint16_t volume, uint16_t accumulation, uint16_t accumulationTriggerVolume, uint16_t accumulationLimit) {
+void plotData(uint16_t volume, uint16_t accumulation, uint16_t accumulationTriggerVolume) {
     Serial.print("Volume:");
     Serial.print(volume);
-    Serial.print(",");
+    Serial.print("\t");
     Serial.print("Accumulation:");
-    Serial.print(accumulation * 10);
-    Serial.print(",");
+    Serial.print(accumulation);
+    Serial.print("\t");
     Serial.print("Accumulation_Trigger_Volume:");
     Serial.print(accumulationTriggerVolume);
-    Serial.print(",");
+    Serial.print("\t");
     Serial.print("Accumulation_Limit:");
-    Serial.println(accumulationLimit * 10);
-    Serial.print(",");
-    Serial.print("High_Level:");
-    Serial.print((accumulationLimit * 10) / 2);
-    Serial.print(",");
-    Serial.print("Medium_Level:");
-    Serial.print((accumulationLimit * 10) / 4);
+    Serial.println(ACCUMULATION_LIMIT);
 }
 
-void setup() { Serial.begin(115200); }
+void setup() {
+    Serial.begin(115200);
+    currentMillis = millis();
+}
 
 void loop() {
-    currentMillis = millis();
+    startMillis = currentMillis;
 
-    mic.loop(currentMillis);
-    led.loop(currentMillis);
-    buzzer.loop(currentMillis);
-    sensitivityPot.loop(currentMillis);
-    durationPot.loop(currentMillis);
-
-    volume = mic.volume();
-    accumulationTriggerVolume = sensitivityPot.value();
-    accumulationLimit = durationPot.value();
-
-    accumulation = calculateAccumulation(volume, accumulation, accumulationTriggerVolume, accumulationLimit);
-
-    switch (calculateAccumulationLevel(accumulation, accumulationLimit)) {
-        case HIGH_LEVEL:
-            led.setFadeDuration(FAST_FADE_DURATION);
-            buzzer.enable();
-            break;
-        case MEDIUM_LEVEL:
-            led.setFadeDuration(MEDIUM_FADE_DURATION);
-            buzzer.disable();
-            break;
-        case LOW_LEVEL:
-            led.setFadeDuration(SLOW_FADE_DURATION);
-            buzzer.disable();
-            break;
+    while (currentMillis - startMillis < SAMPLE_WINDOW) {
+        led.loop(currentMillis);
+        mic.loop();
+        currentMillis = millis();
     }
 
-    plotData(volume, accumulation, accumulationTriggerVolume, accumulationLimit);
+    volume = mic.volume();
+    accumulationTriggerVolume = sensitivityPot.read();
+    accumulation = calculateAccumulation(volume, accumulation, accumulationTriggerVolume);
+
+    plotData(volume, accumulation, accumulationTriggerVolume);
+
+    if (accumulation >= ACCUMULATION_LIMIT) {
+        led.setFadeDuration(FAST_FADE_DURATION);
+
+        while (buzzer.beepCount() < 3) {
+            currentMillis = millis();
+            led.loop(currentMillis);
+            buzzer.loop(currentMillis);
+        }
+
+        buzzer.reset();
+        led.setFadeDuration(MEDIUM_FADE_DURATION);
+        accumulation = ACCUMULATION_RESET_VALUE;
+    } else if (accumulation > 0) {
+        led.setFadeDuration(MEDIUM_FADE_DURATION);
+    } else {
+        led.setFadeDuration(SLOW_FADE_DURATION);
+    }
 }

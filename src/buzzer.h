@@ -7,13 +7,12 @@ class QBuzzer {
         : _pin(pin), _frequency(frequency), _beepDuration(beepDuration) {}
 
     void loop(unsigned long currentMillis) {
-        if (!_isEnabled) return;
-
-        if (currentMillis - _startMillis >= _beepDuration || _startMillis == NULL) {
+        if (currentMillis - _startMillis >= _beepDuration || _startMillis == 0) {
             _startMillis = currentMillis;
 
             if (_isBeepOn) {
                 _isBeepOn = false;
+                _beepCount++;
                 noTone(_pin);
             } else {
                 _isBeepOn = true;
@@ -22,20 +21,20 @@ class QBuzzer {
         }
     }
 
-    void enable() { _isEnabled = true; }
-
-    void disable() {
-        _isEnabled = false;
+    void reset() {
         _isBeepOn = false;
-        _startMillis = NULL;
+        _startMillis = 0;
+        _beepCount = 0;
         noTone(_pin);
     }
+
+    byte beepCount() { return _beepCount; }
 
    private:
     byte _pin;
     uint16_t _frequency;
     uint16_t _beepDuration;
-    unsigned long _startMillis;
-    bool _isEnabled = false;
+    unsigned long _startMillis = 0;
     bool _isBeepOn = false;
+    byte _beepCount = 0;
 };
